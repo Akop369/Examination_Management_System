@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Dashboard - Examination System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light pb-5">
+
+<!-- Navigation Bar -->
+<nav class="navbar navbar-dark bg-dark px-4 mb-4">
+  <span class="navbar-brand mb-0 h1">Teacher Assessment Ledger</span>
+  <div>
+    <span class="text-white me-3">{{ session.get('full_name', 'Teacher') }}</span>
+    <a href="/logout" class="text-danger text-decoration-none fw-bold">Logout</a>
+  </div>
+</nav>
+
+<div class="container my-4">
+  <!-- Top Action Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Student Performance Records</h4>
+    <div>
+      <a href="/teacher/manage-questions" class="btn btn-primary me-2">⚙ Manage Question Bank</a>
+      <a href="/teacher/export-excel" class="btn btn-success">⬇ Export to Excel (.xlsx)</a>
+    </div>
+  </div>
+
+  <!-- Class & Student Filters -->
+  <div class="card p-3 mb-4 shadow-sm bg-white">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold">Filter by Class / Stream</label>
+        <select class="form-select" onchange="location = '/teacher/dashboard?class_id=' + this.value;">
+          <option value="">-- All Classes & Streams --</option>
+          {% for c in classes %}
+            <option value="{{ c.id }}" {% if selected_class_id == c.id %}selected{% endif %}>
+              {{ c.class_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label fw-bold">Filter by Specific Student</label>
+        <select class="form-select" onchange="location = '/teacher/dashboard?class_id={{ selected_class_id }}&student_id=' + this.value;" {% if not students %}disabled{% endif %}>
+          <option value="">-- All Students in Selected Class --</option>
+          {% for s in students %}
+            <option value="{{ s.id }}" {% if selected_student_id == s.id %}selected{% endif %}>
+              Roll No: {{ s.roll_number }} - {{ s.full_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submission Attempts Table -->
+  <div class="card shadow-sm border-0">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover align-middle mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th scope="col">Roll No</th>
+            <th scope="col">Student Name</th>
+            <th scope="col">Question Set</th>
+            <th scope="col">Score</th>
+            <th scope="col">Time Spent</th>
+            <th scope="col">Submitted At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td><strong>{{ r.student.roll_number if r.student else 'N/A' }}</strong></td>
+            <td>{{ r.student.full_name if r.student else 'Unknown' }}</td>
+            <td>{{ r.question_set.set_title if r.question_set else ('Set #' ~ r.set_id) }}</td>
+            <td>
+              <span class="badge bg-{{ 'success' if r.score >= 5 else 'danger' }} fs-6">
+                {{ r.score }} / 10
+              </span>
+            </td>
+            <td>{{ r.time_taken_seconds }}s</td>
+            <td>{{ r.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              <em>No student test attempts found for the selected filter.</em>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

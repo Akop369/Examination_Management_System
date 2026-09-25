@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage Question Bank - Teacher</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light pb-5">
+
+<nav class="navbar navbar-dark bg-dark px-4 mb-4">
+  <span class="navbar-brand mb-0 h1">Teacher Assessment Portal</span>
+  <div>
+    <a href="/teacher/dashboard" class="btn btn-outline-light btn-sm me-2">Marks Ledger</a>
+    <span class="text-white">{{ session.get('full_name') }} | </span>
+    <a href="/logout" class="text-danger text-decoration-none">Logout</a>
+  </div>
+</nav>
+
+<div class="container" style="max-width: 920px;">
+  <h3 class="mb-4">Question Bank Management</h3>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- Row 1: Add Subject & Chapter -->
+  <div class="row g-4 mb-4">
+    <!-- Add Subject Form -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-primary text-white fw-bold">1. Add New Subject</div>
+        <div class="card-body">
+          <form method="POST" action="/teacher/add-subject">
+            <div class="mb-3">
+              <label class="form-label">Select Class / Stream</label>
+              <select name="class_id" class="form-select" required>
+                <option value="">-- Choose Class / Stream --</option>
+                {% for c in classes %}
+                  <option value="{{ c.id }}">{{ c.class_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Subject Name</label>
+              <input type="text" name="subject_name" class="form-control" placeholder="e.g. Physics, Chemistry, Accountancy" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Add Subject</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Chapter Form -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-secondary text-white fw-bold">2. Add New Chapter</div>
+        <div class="card-body">
+          <form method="POST" action="/teacher/add-chapter">
+            <div class="mb-3">
+              <label class="form-label">Select Subject</label>
+              <select name="subject_id" class="form-select" required>
+                <option value="">-- Choose Subject --</option>
+                {% for s in subjects %}
+                  <option value="{{ s.id }}">{{ s.class_parent.class_name }} &gt; {{ s.subject_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row mb-3">
+              <div class="col-4">
+                <label class="form-label">Ch No.</label>
+                <input type="number" name="chapter_no" class="form-control" placeholder="1" min="1" required>
+              </div>
+              <div class="col-8">
+                <label class="form-label">Chapter Title</label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. Thermodynamics" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-secondary w-100">Add Chapter</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: Add 10-Question MCQ Set -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-dark text-white fw-bold">3. Create 10-Question MCQ Set</div>
+    <div class="card-body">
+      <form method="POST" action="/teacher/add-question-set">
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <label class="form-label fw-bold">Select Chapter</label>
+            <select name="chapter_id" class="form-select" required>
+              <option value="">-- Choose Chapter --</option>
+              {% for ch in chapters %}
+                <option value="{{ ch.id }}">
+                  {{ ch.subject_parent.class_parent.class_name }} &gt; {{ ch.subject_parent.subject_name }} &gt; Ch {{ ch.chapter_no }}: {{ ch.title }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Set Title</label>
+            <input type="text" name="set_title" class="form-control" placeholder="e.g. Set B" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Time Limit (mins)</label>
+            <input type="number" name="time_limit" class="form-control" value="10" min="1" required>
+          </div>
+        </div>
+
+        <h5 class="border-bottom pb-2 mb-3">Enter the 10 MCQs (1 Mark Each)</h5>
+
+        {% for i in range(1, 11) %}
+        <div class="border rounded p-3 mb-3 bg-white">
+          <h6 class="text-primary mb-2">Question {{ i }}</h6>
+          <div class="mb-2">
+            <input type="text" name="q_text_{{ i }}" class="form-control" placeholder="Question prompt..." required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <input type="text" name="q_optA_{{ i }}" class="form-control" placeholder="Option A" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optB_{{ i }}" class="form-control" placeholder="Option B" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optC_{{ i }}" class="form-control" placeholder="Option C" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optD_{{ i }}" class="form-control" placeholder="Option D" required>
+            </div>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Correct Option:</label>
+              <select name="q_correct_{{ i }}" class="form-select form-select-sm" required>
+                <option value="A">Option A</option>
+                <option value="B">Option B</option>
+                <option value="C">Option C</option>
+                <option value="D">Option D</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-success btn-lg w-100">Save 10-Question Set</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
