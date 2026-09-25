@@ -1,7 +1,7 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash
-from models import db, User, Class, Subject, Chapter, QuestionSet, Question, TestResult, StudentAnswer
 import io
 import openpyxl
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash
+from models import db, User, Class, Subject, Chapter, QuestionSet, Question, TestResult, StudentAnswer
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_exam_key'
@@ -72,6 +72,40 @@ def register():
     classes = Class.query.order_by(Class.id).all()
     return render_template('register.html', classes=classes)
 
+@app.route('/register-teacher', methods=['GET', 'POST'])
+def register_teacher():
+    SECRET_KEY_PHRASE = "TEACHER2026"  # Master authorization passcode
+
+    if request.method == 'POST':
+        full_name = request.form.get('full_name')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        secret_code = request.form.get('secret_code')
+
+        if secret_code != SECRET_KEY_PHRASE:
+            flash("Invalid teacher authorization code. Access denied.", "danger")
+            return redirect(url_for('register_teacher'))
+
+        if User.query.filter_by(email=email).first():
+            flash("Email already registered.", "danger")
+            return redirect(url_for('register_teacher'))
+
+        new_teacher = User(
+            full_name=full_name,
+            email=email,
+            password=password,
+            role='teacher',
+            roll_number=None,
+            class_id=None
+        )
+        db.session.add(new_teacher)
+        db.session.commit()
+
+        flash("Teacher account created successfully! Please log in.", "success")
+        return redirect(url_for('login'))
+
+    return render_template('register_teacher.html')
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -112,7 +146,7 @@ def exam(set_id):
     student = User.query.get(session['user_id'])
     q_set = QuestionSet.query.get_or_404(set_id)
     
-    # Class boundary security guard
+    # Class-level boundary verification guard
     chapter = Chapter.query.get(q_set.chapter_id)
     subject = Subject.query.get(chapter.subject_id)
     if student.class_id and subject.class_id != student.class_id:
@@ -135,7 +169,7 @@ def exam(set_id):
         db.session.add(result)
         db.session.commit()
 
-        # 2. Extract choices, evaluate correctness, and log each item
+        # 2. Track each question's selected answer and evaluate correctness
         answers_to_store = []
         for q in questions:
             user_choice = request.form.get(f'question_{q.id}')
@@ -153,7 +187,7 @@ def exam(set_id):
                 )
             )
 
-        # 3. Save final calculated marks and responses
+        # 3. Update the calculated score and commit detailed logs
         result.score = score
         db.session.add_all(answers_to_store)
         db.session.commit()
@@ -263,12 +297,10 @@ def add_question_set():
         flash("Please provide all set details.", "danger")
         return redirect(url_for('manage_questions'))
 
-    # 1. Create the QuestionSet
     q_set = QuestionSet(chapter_id=chapter_id, set_title=set_title, time_limit=time_limit, total_marks=10)
     db.session.add(q_set)
     db.session.commit()
 
-    # 2. Extract and create all 10 questions
     questions = []
     for i in range(1, 11):
         q_text = request.form.get(f'q_text_{i}')
