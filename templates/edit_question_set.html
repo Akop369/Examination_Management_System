@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Question Set{% endblock %}
+
+{% block content %}
+<div class="container my-4" style="max-width: 920px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Edit Question Set: {{ q_set.set_title }}</h3>
+    <a href="/teacher/manage-questions" class="btn btn-outline-secondary btn-sm">← Back to Question Bank</a>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-dark text-white fw-bold">Modify Question Set Details</div>
+    <div class="card-body">
+      <form method="POST" action="/teacher/edit-question-set/{{ q_set.id }}">
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <label class="form-label fw-bold">Select Chapter</label>
+            <select name="chapter_id" class="form-select" required>
+              {% for ch in chapters %}
+                <option value="{{ ch.id }}" {% if q_set.chapter_id == ch.id %}selected{% endif %}>
+                  {{ ch.subject_parent.class_parent.class_name }} &gt; {{ ch.subject_parent.subject_name }} &gt; Ch {{ ch.chapter_no }}: {{ ch.title }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Set Title</label>
+            <input type="text" name="set_title" class="form-control" value="{{ q_set.set_title }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-bold">Time Limit (mins)</label>
+            <input type="number" name="time_limit" class="form-control" value="{{ q_set.time_limit }}" min="1" required>
+          </div>
+        </div>
+
+        <h5 class="border-bottom pb-2 mb-3">Edit the 10 MCQs</h5>
+
+        {% for q in questions %}
+        <div class="border rounded p-3 mb-3 bg-white">
+          <h6 class="text-primary mb-2">Question {{ loop.index }}</h6>
+          <div class="mb-2">
+            <input type="text" name="q_text_{{ loop.index }}" class="form-control" value="{{ q.question_text }}" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <input type="text" name="q_optA_{{ loop.index }}" class="form-control" value="{{ q.option_a }}" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optB_{{ loop.index }}" class="form-control" value="{{ q.option_b }}" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optC_{{ loop.index }}" class="form-control" value="{{ q.option_c }}" required>
+            </div>
+            <div class="col-md-6">
+              <input type="text" name="q_optD_{{ loop.index }}" class="form-control" value="{{ q.option_d }}" required>
+            </div>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Correct Option:</label>
+              <select name="q_correct_{{ loop.index }}" class="form-select form-select-sm" required>
+                <option value="A" {% if q.correct_option == 'A' %}selected{% endif %}>Option A</option>
+                <option value="B" {% if q.correct_option == 'B' %}selected{% endif %}>Option B</option>
+                <option value="C" {% if q.correct_option == 'C' %}selected{% endif %}>Option C</option>
+                <option value="D" {% if q.correct_option == 'D' %}selected{% endif %}>Option D</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-warning btn-lg w-100 fw-bold">Update Question Set</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

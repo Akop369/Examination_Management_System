@@ -1,5 +1,7 @@
 import io
+from datetime import datetime
 import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
 from flask import Flask, render_template, request, redirect, url_for, session, send_file, flash
 from models import db, User, Class, Subject, Chapter, QuestionSet, Question, TestResult, StudentAnswer
 
@@ -10,13 +12,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
-# ----------------- DATABASE AUTO-INITIALIZATION -----------------
+# ----------------- DATABASE AUTO-INITIALIZATION & SEEDING -----------------
 
 with app.app_context():
-    # Automatically build all tables on deployment startup
     db.create_all()
 
-    # Pre-populate all standard and stream-specific classes
     all_classes = [
         "Class 6", "Class 7", "Class 8", "Class 9", "Class 10",
         "11th Science", "11th Commerce", "11th Arts",
@@ -27,7 +27,6 @@ with app.app_context():
             db.session.add(Class(class_name=c_name))
     db.session.commit()
 
-    # Pre-populate default teacher account
     if not User.query.filter_by(email="teacher@test.com").first():
         default_teacher = User(
             full_name="Prof. Sharma",
@@ -38,7 +37,6 @@ with app.app_context():
         db.session.add(default_teacher)
         db.session.commit()
 
-    # Pre-populate default sample student and curriculum if empty
     class_10 = Class.query.filter_by(class_name="Class 10").first()
     if class_10 and not User.query.filter_by(email="rahul@test.com").first():
         default_student = User(
@@ -215,7 +213,18 @@ def exam(set_id):
 
     student = User.query.get(session['user_id'])
     q_set = QuestionSet.query.get_or_404(set_id)
-    
+
+    # 1. Single Attempt Guard: Block repeat test attempts
+    existing_attempt = TestResult.query.filter_by(
+        student_id=session['user_id'],
+        set_id=q_set.id
+    ).first()
+
+    if existing_attempt:
+        flash("Test already attempted! You can only attempt a test once.", "warning")
+        return redirect(url_for('result', result_id=existing_attempt.id))
+
+    # 2. Class boundary verification
     chapter = Chapter.query.get(q_set.chapter_id)
     subject = Subject.query.get(chapter.subject_id)
     if student.class_id and subject.class_id != student.class_id:
@@ -269,8 +278,14 @@ def result(result_id):
         
     res = TestResult.query.get_or_404(result_id)
     answers = StudentAnswer.query.filter_by(result_id=res.id).all()
+
+    # Query Top 5 performers for this set (Highest score first, then fastest time)
+    top_performers = TestResult.query.filter_by(set_id=res.set_id)\
+        .order_by(TestResult.score.desc(), TestResult.time_taken_seconds.asc())\
+        .limit(5)\
+        .all()
     
-    return render_template('result.html', result=res, answers=answers)
+    return render_template('result.html', result=res, answers=answers, top_performers=top_performers)
 
 # ----------------- TEACHER ACTIONS & QUESTION BANK -----------------
 
@@ -284,14 +299,45 @@ def teacher_dashboard():
     students = User.query.filter_by(role='student', class_id=selected_class_id).all() if selected_class_id else []
     selected_student_id = request.args.get('student_id', type=int)
     
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
     query = TestResult.query
+
     if selected_student_id:
         query = query.filter_by(student_id=selected_student_id)
     elif selected_class_id:
         student_ids = [s.id for s in students]
         query = query.filter(TestResult.student_id.in_(student_ids))
 
+    if start_date_str:
+        try:
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            query = query.filter(TestResult.submitted_at >= start_dt)
+        except ValueError:
+            pass
+
+    if end_date_str:
+        try:
+            end_dt = datetime.strptime(end_date_str + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+            query = query.filter(TestResult.submitted_at <= end_dt)
+        except ValueError:
+            pass
+
     results = query.order_by(TestResult.submitted_at.desc()).all()
+
+    student_summary = None
+    if selected_student_id and results:
+        total_tests = len(results)
+        total_scored = sum(r.score for r in results)
+        total_possible = total_tests * 10
+        percentage = round((total_scored / total_possible) * 100, 2) if total_possible > 0 else 0
+        student_summary = {
+            "total_tests": total_tests,
+            "total_scored": total_scored,
+            "total_possible": total_possible,
+            "percentage": percentage
+        }
 
     return render_template(
         'teacher_dashboard.html',
@@ -299,7 +345,10 @@ def teacher_dashboard():
         students=students,
         results=results,
         selected_class_id=selected_class_id,
-        selected_student_id=selected_student_id
+        selected_student_id=selected_student_id,
+        start_date=start_date_str,
+        end_date=end_date_str,
+        student_summary=student_summary
     )
 
 @app.route('/teacher/manage-questions')
@@ -393,22 +442,125 @@ def add_question_set():
     flash(f"Question Set '{set_title}' with 10 MCQs saved successfully!", "success")
     return redirect(url_for('manage_questions'))
 
+@app.route('/teacher/edit-question-set/<int:set_id>', methods=['GET', 'POST'])
+def edit_question_set(set_id):
+    if 'user_id' not in session or session.get('role') != 'teacher':
+        return redirect(url_for('login'))
+
+    q_set = QuestionSet.query.get_or_404(set_id)
+    questions = Question.query.filter_by(set_id=q_set.id).all()
+    chapters = Chapter.query.join(Subject).order_by(Subject.id, Chapter.chapter_no).all()
+
+    if request.method == 'POST':
+        q_set.chapter_id = request.form.get('chapter_id', type=int)
+        q_set.set_title = request.form.get('set_title', '').strip()
+        q_set.time_limit = request.form.get('time_limit', default=10, type=int)
+
+        for idx, q in enumerate(questions, start=1):
+            q.question_text = request.form.get(f'q_text_{idx}')
+            q.option_a = request.form.get(f'q_optA_{idx}')
+            q.option_b = request.form.get(f'q_optB_{idx}')
+            q.option_c = request.form.get(f'q_optC_{idx}')
+            q.option_d = request.form.get(f'q_optD_{idx}')
+            q.correct_option = request.form.get(f'q_correct_{idx}')
+
+        db.session.commit()
+        flash(f"Question Set '{q_set.set_title}' updated successfully!", "success")
+        return redirect(url_for('manage_questions'))
+
+    return render_template('edit_question_set.html', q_set=q_set, questions=questions, chapters=chapters)
+
 @app.route('/teacher/export-excel')
 def export_excel():
     if 'user_id' not in session or session.get('role') != 'teacher':
         return redirect(url_for('login'))
 
+    selected_class_id = request.args.get('class_id', type=int)
+    selected_student_id = request.args.get('student_id', type=int)
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    query = TestResult.query
+
+    if selected_student_id:
+        query = query.filter_by(student_id=selected_student_id)
+    elif selected_class_id:
+        students = User.query.filter_by(role='student', class_id=selected_class_id).all()
+        student_ids = [s.id for s in students]
+        query = query.filter(TestResult.student_id.in_(student_ids))
+
+    if start_date_str:
+        try:
+            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+            query = query.filter(TestResult.submitted_at >= start_dt)
+        except ValueError:
+            pass
+
+    if end_date_str:
+        try:
+            end_dt = datetime.strptime(end_date_str + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+            query = query.filter(TestResult.submitted_at <= end_dt)
+        except ValueError:
+            pass
+
+    results = query.order_by(TestResult.submitted_at.desc()).all()
+
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Exam Marks"
+    ws.title = "Exam Performance"
+
+    bold_font = Font(name="Calibri", size=11, bold=True)
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    summary_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    white_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+
+    if selected_student_id:
+        student = User.query.get(selected_student_id)
+        cls = Class.query.get(student.class_id) if (student and student.class_id) else None
+        
+        total_tests = len(results)
+        total_scored = sum(r.score for r in results)
+        total_possible = total_tests * 10
+        percentage = round((total_scored / total_possible) * 100, 2) if total_possible > 0 else 0
+
+        ws.append(["STUDENT PERFORMANCE REPORT", "", "", ""])
+        ws.merge_cells("A1:D1")
+        ws["A1"].font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        ws["A1"].fill = header_fill
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        ws.append(["Student Name:", student.full_name if student else "N/A", "Roll Number:", student.roll_number if student else "N/A"])
+        ws.append(["Class / Stream:", cls.class_name if cls else "N/A", "Report Date:", datetime.utcnow().strftime("%Y-%m-%d")])
+        ws.append(["Date Range:", f"{start_date_str or 'Earliest'} to {end_date_str or 'Latest'}", "", ""])
+        ws.append([])
+
+        summary_rows = [
+            ["Total Tests Attempted", total_tests],
+            ["Total Marks Possible", total_possible],
+            ["Total Marks Scored", total_scored],
+            ["Overall Percentage", f"{percentage}%"]
+        ]
+        for row in summary_rows:
+            ws.append(row)
+            cur_row = ws.max_row
+            ws[f"A{cur_row}"].font = bold_font
+            ws[f"A{cur_row}"].fill = summary_fill
+            ws[f"B{cur_row}"].font = bold_font
+
+        ws.append([])
 
     headers = [
         "Roll No", "Student Name", "Class", "Subject", 
         "Chapter", "Set", "Score (/10)", "Time Taken (s)", "Submitted At"
     ]
     ws.append(headers)
+    table_header_row = ws.max_row
 
-    results = TestResult.query.all()
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=table_header_row, column=col_idx)
+        cell.font = white_font
+        cell.fill = header_fill
+
     for r in results:
         student = User.query.get(r.student_id)
         q_set = QuestionSet.query.get(r.set_id)
@@ -428,14 +580,21 @@ def export_excel():
             r.submitted_at.strftime("%Y-%m-%d %H:%M:%S")
         ])
 
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = col[0].column_letter
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
 
+    filename = f"Student_Report_{selected_student_id}.xlsx" if selected_student_id else "Exam_Marks_Filtered.xlsx"
+
     return send_file(
         stream,
         as_attachment=True,
-        download_name="Student_Exam_Marks.xlsx",
+        download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
