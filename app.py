@@ -10,6 +10,76 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
+# ----------------- DATABASE AUTO-INITIALIZATION -----------------
+
+with app.app_context():
+    # Automatically build all tables on deployment startup
+    db.create_all()
+
+    # Pre-populate all standard and stream-specific classes
+    all_classes = [
+        "Class 6", "Class 7", "Class 8", "Class 9", "Class 10",
+        "11th Science", "11th Commerce", "11th Arts",
+        "12th Science", "12th Commerce", "12th Arts"
+    ]
+    for c_name in all_classes:
+        if not Class.query.filter_by(class_name=c_name).first():
+            db.session.add(Class(class_name=c_name))
+    db.session.commit()
+
+    # Pre-populate default teacher account
+    if not User.query.filter_by(email="teacher@test.com").first():
+        default_teacher = User(
+            full_name="Prof. Sharma",
+            email="teacher@test.com",
+            password="admin",
+            role="teacher"
+        )
+        db.session.add(default_teacher)
+        db.session.commit()
+
+    # Pre-populate default sample student and curriculum if empty
+    class_10 = Class.query.filter_by(class_name="Class 10").first()
+    if class_10 and not User.query.filter_by(email="rahul@test.com").first():
+        default_student = User(
+            full_name="Rahul Verma",
+            email="rahul@test.com",
+            password="123",
+            role="student",
+            roll_number="101",
+            class_id=class_10.id
+        )
+        db.session.add(default_student)
+        db.session.commit()
+
+    if class_10 and not Subject.query.filter_by(class_id=class_10.id, subject_name="Mathematics").first():
+        math = Subject(class_id=class_10.id, subject_name="Mathematics")
+        db.session.add(math)
+        db.session.commit()
+
+        chap = Chapter(subject_id=math.id, chapter_no=1, title="Linear Equations")
+        db.session.add(chap)
+        db.session.commit()
+
+        q_set = QuestionSet(chapter_id=chap.id, set_title="Set A", time_limit=10, total_marks=10)
+        db.session.add(q_set)
+        db.session.commit()
+
+        sample_questions = [
+            Question(
+                set_id=q_set.id,
+                question_text=f"Question {i}: What is the value of x if x + {i} = {i * 2}?",
+                option_a=str(i),
+                option_b=str(i + 1),
+                option_c=str(i + 2),
+                option_d=str(i + 3),
+                correct_option="A"
+            )
+            for i in range(1, 11)
+        ]
+        db.session.add_all(sample_questions)
+        db.session.commit()
+
 # ----------------- AUTHENTICATION & REGISTRATION -----------------
 
 @app.route('/')
@@ -74,7 +144,7 @@ def register():
 
 @app.route('/register-teacher', methods=['GET', 'POST'])
 def register_teacher():
-    SECRET_KEY_PHRASE = "TEACHER2026"  # Master authorization passcode
+    SECRET_KEY_PHRASE = "TEACHER2026"
 
     if request.method == 'POST':
         full_name = request.form.get('full_name')
@@ -146,7 +216,6 @@ def exam(set_id):
     student = User.query.get(session['user_id'])
     q_set = QuestionSet.query.get_or_404(set_id)
     
-    # Class-level boundary verification guard
     chapter = Chapter.query.get(q_set.chapter_id)
     subject = Subject.query.get(chapter.subject_id)
     if student.class_id and subject.class_id != student.class_id:
@@ -159,7 +228,6 @@ def exam(set_id):
         score = 0
         time_taken = request.form.get('time_taken', default=0, type=int)
 
-        # 1. Create and commit the overall TestResult record
         result = TestResult(
             student_id=session['user_id'],
             set_id=q_set.id,
@@ -169,7 +237,6 @@ def exam(set_id):
         db.session.add(result)
         db.session.commit()
 
-        # 2. Track each question's selected answer and evaluate correctness
         answers_to_store = []
         for q in questions:
             user_choice = request.form.get(f'question_{q.id}')
@@ -187,7 +254,6 @@ def exam(set_id):
                 )
             )
 
-        # 3. Update the calculated score and commit detailed logs
         result.score = score
         db.session.add_all(answers_to_store)
         db.session.commit()
