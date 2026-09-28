@@ -90,7 +90,7 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th scope="col">Class & Subject</th>
+              <th scope="col">Class &amp; Subject</th>
               <th scope="col">Chapter</th>
               <th scope="col">Set Title</th>
               <th scope="col">Duration</th>
@@ -100,7 +100,7 @@
           <tbody>
             {% set count = namespace(value=0) %}
             {% for ch in chapters %}
-              {% for s in ch.question_sets %}
+              {% for s in ch.sets %}
                 {% set count.value = count.value + 1 %}
                 <tr>
                   <td>{{ ch.subject_parent.class_parent.class_name }} &gt; {{ ch.subject_parent.subject_name }}</td>
