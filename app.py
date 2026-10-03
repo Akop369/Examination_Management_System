@@ -1,3 +1,4 @@
+import os
 import io
 from datetime import datetime
 import openpyxl
@@ -7,7 +8,14 @@ from models import db, User, Class, Subject, Chapter, QuestionSet, Question, Tes
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_exam_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+
+# ----------------- DATABASE CONFIGURATION -----------------
+# Connects to Render PostgreSQL in production, falls back to SQLite locally
+raw_db_url = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+if raw_db_url.startswith("postgres://"):
+    raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = raw_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
@@ -17,7 +25,7 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-    # Pre-populate all standard and stream-specific classes
+    # Pre-populate standard and stream-specific classes
     all_classes = [
         "Class 6", "Class 7", "Class 8", "Class 9", "Class 10",
         "11th Science", "11th Commerce", "11th Arts",
@@ -39,7 +47,7 @@ with app.app_context():
         db.session.add(default_teacher)
         db.session.commit()
 
-    # Pre-populate default sample student and curriculum
+    # Pre-populate default sample student
     class_10 = Class.query.filter_by(class_name="Class 10").first()
     if class_10 and not User.query.filter_by(email="rahul@test.com").first():
         default_student = User(
@@ -53,6 +61,7 @@ with app.app_context():
         db.session.add(default_student)
         db.session.commit()
 
+    # Pre-populate sample syllabus if empty
     if class_10 and not Subject.query.filter_by(class_id=class_10.id, subject_name="Mathematics").first():
         math = Subject(class_id=class_10.id, subject_name="Mathematics")
         db.session.add(math)
@@ -200,7 +209,6 @@ def select_exam():
     chapters = Chapter.query.filter_by(subject_id=selected_subject_id).all() if selected_subject_id else []
     sets = QuestionSet.query.filter_by(chapter_id=selected_chapter_id).all() if selected_chapter_id else []
 
-    # Identify test sets already attempted by this student
     attempts = TestResult.query.filter_by(student_id=current_uid).all()
     attempted_set_ids = [a.set_id for a in attempts]
 
@@ -224,7 +232,7 @@ def exam(set_id):
     student = User.query.get(current_uid)
     q_set = QuestionSet.query.get_or_404(set_id)
 
-    # Single-Attempt Restriction Guard (GET and POST)
+    # Prevent duplicate attempts
     existing_attempt = TestResult.query.filter_by(
         student_id=current_uid,
         set_id=q_set.id
@@ -288,7 +296,6 @@ def result(result_id):
     res = TestResult.query.get_or_404(result_id)
     answers = StudentAnswer.query.filter_by(result_id=res.id).all()
 
-    # Query Top 5 performers: highest score first, then fastest completion time
     top_performers = TestResult.query.filter_by(set_id=res.set_id)\
         .order_by(TestResult.score.desc(), TestResult.time_taken_seconds.asc())\
         .limit(5)\
@@ -523,7 +530,6 @@ def export_excel():
     summary_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     white_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
 
-    # If an individual student was targeted, append Performance Summary block at top
     if selected_student_id:
         student = User.query.get(selected_student_id)
         cls = Class.query.get(student.class_id) if (student and student.class_id) else None
@@ -559,7 +565,6 @@ def export_excel():
 
         ws.append([])
 
-    # Table of Individual Records
     headers = [
         "Roll No", "Student Name", "Class", "Subject", 
         "Chapter", "Set", "Score (/10)", "Time Taken (s)", "Submitted At"
@@ -611,3 +616,4 @@ def export_excel():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    
