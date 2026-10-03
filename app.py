@@ -12,8 +12,11 @@ app.secret_key = 'super_secret_exam_key'
 # ----------------- DATABASE CONFIGURATION -----------------
 # Connects to Render PostgreSQL in production, falls back to SQLite locally
 raw_db_url = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+
 if raw_db_url.startswith("postgres://"):
-    raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+    raw_db_url = raw_db_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif raw_db_url.startswith("postgresql://"):
+    raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -25,7 +28,7 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-    # Pre-populate standard and stream-specific classes
+    # Pre-populate all standard and stream-specific classes
     all_classes = [
         "Class 6", "Class 7", "Class 8", "Class 9", "Class 10",
         "11th Science", "11th Commerce", "11th Arts",
@@ -61,7 +64,7 @@ with app.app_context():
         db.session.add(default_student)
         db.session.commit()
 
-    # Pre-populate sample syllabus if empty
+    # Pre-populate sample curriculum if empty
     if class_10 and not Subject.query.filter_by(class_id=class_10.id, subject_name="Mathematics").first():
         math = Subject(class_id=class_10.id, subject_name="Mathematics")
         db.session.add(math)
@@ -232,7 +235,6 @@ def exam(set_id):
     student = User.query.get(current_uid)
     q_set = QuestionSet.query.get_or_404(set_id)
 
-    # Prevent duplicate attempts
     existing_attempt = TestResult.query.filter_by(
         student_id=current_uid,
         set_id=q_set.id
@@ -616,4 +618,3 @@ def export_excel():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    
